@@ -180,6 +180,8 @@ async def analyse_blog_content(state: GraphState) -> Dict[str, Any]:
         blog_content = await scrape_website_to_markdown(blog_url)
         company_name = company.get("name", "the company")
 
+        print(blog_content)
+
         prompt = f"""
         Analyze the blog content for {company_name}.
         

@@ -30,16 +30,30 @@ async def scrape_website_to_markdown(url: str) -> str:
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
     }
 
-    async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
-        try:
+    try:
+        async with httpx.AsyncClient(follow_redirects=False, timeout=30.0) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise RuntimeError(f"Failed to fetch {url}: {e}")
+    except httpx.HTTPStatusError as e:
+        # Return error message instead of raising (so workflow continues)
+        return f"Error: Could not fetch {url} - HTTP {e.response.status_code}"
+    except httpx.TimeoutException:
+        return f"Error: Timeout fetching {url}"
+    except Exception as e:
+        return f"Error: {str(e)}"
 
     soup = BeautifulSoup(response.text, "html.parser")
 
