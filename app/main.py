@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from app.api.routes import leads
+from app.api.routes import research
 from app.config import get_settings
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -40,6 +41,7 @@ async def health_check():
 
 
 app.include_router(leads.router, prefix="/api/leads", tags=["leads"])
+app.include_router(research.router, prefix="/api/research", tags=["research"])
 
 
 @app.get("/")
