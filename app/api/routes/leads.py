@@ -3,24 +3,78 @@ from typing import List
 import uuid
 from uuid import UUID
 from app.models.lead import Lead, LeadCreate, LeadUpdate
-from app.database import get_supabase_admin_client
+from app.database import get_supabase_admin_client, get_supabase_client
 
 
 router = APIRouter()
 
 
 @router.get("/", response_model=List[Lead])
-async def get_leads():
+async def get_leads(limit: int = 5):
     """
     Retrieve all leads from the database.
 
     Returns:
         List[Lead]: A list of lead objects.
     """
-    supabase = get_supabase_admin_client()
-    response = supabase.table("leads").select("*").execute()
+    try:
+        supabase = get_supabase_admin_client()
+        query = supabase.table("leads").select("*").order("created_at", desc=True)
 
-    return response.data
+        if limit:
+            query = query.limit(limit)
+
+        response = query.execute()
+
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/stats")
+async def get_lead_stats():
+    """Get lead statistics."""
+
+    try:
+        supabase = get_supabase_admin_client()
+
+        result = supabase.table("leads").select("status, score").execute()
+
+        leads = result.data or []
+
+        scores = []
+
+        stats = {
+            "total": len(leads),
+            "new": 0,
+            "researching": 0,
+            "qualified": 0,
+            "not_qualified": 0,
+            "average_score": 0,
+            "conversion_rate": 0,
+        }
+
+        for lead in leads:
+            status = lead.get("status", "new")
+
+            if status in stats:
+                stats[status] += 1
+
+            score = lead.get("score")
+            if score is not None and score > 0:
+                scores.append(score)
+
+        if scores:
+            stats["average_score"] = round(sum(scores) / len(scores), 1)
+
+        completed = stats["qualified"] + stats["not_qualified"]
+        if completed > 0:
+            stats["conversion_rate"] = round((stats["qualified"] / completed) * 100, 1)
+
+        return stats
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{lead_id}", response_model=Lead)
