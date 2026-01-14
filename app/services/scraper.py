@@ -3,7 +3,7 @@ import httpx
 import html2text
 from bs4 import BeautifulSoup
 from pydantic import BaseModel
-
+from urllib.parse import urljoin
 from app.services.llm import invoke_llm
 
 
@@ -17,15 +17,65 @@ class WebsiteData(BaseModel):
     facebook: str = ""
 
 
-async def scrape_website_to_markdown(url: str) -> str:
+def extract_important_links(html_content: str, base_url: str) -> dict:
+    """
+    Extract blog and social media links directly from HTML.
+    This runs BEFORE truncation so we don't lose footer links.
+    """
+    soup = BeautifulSoup(html_content, "html.parser")
+
+    links = {
+        "blog_url": "",
+        "youtube": "",
+        "twitter": "",
+        "facebook": "",
+        "instagram": "",
+        "linkedin": "",
+    }
+
+    # Blog patterns (in href or link text)
+    blog_patterns = ["/blog", "/news", "/articles", "/insights", "/resources", "/posts"]
+    blog_text_patterns = ["blog", "news", "articles", "insights"]
+
+    for anchor in soup.find_all("a", href=True):
+        href = anchor.get("href", "").lower()
+        text = anchor.get_text().lower().strip()
+        full_url = urljoin(base_url, anchor.get("href", ""))
+
+        # Blog URL
+        if not links["blog_url"]:
+            for pattern in blog_patterns:
+                if pattern in href:
+                    links["blog_url"] = full_url
+                    break
+            if not links["blog_url"]:
+                for pattern in blog_text_patterns:
+                    if pattern in text and len(text) < 20:  # Short link text
+                        links["blog_url"] = full_url
+                        break
+
+        # Social media
+        if "youtube.com" in href or "youtu.be" in href:
+            links["youtube"] = full_url
+        elif "twitter.com" in href or "x.com" in href:
+            links["twitter"] = full_url
+        elif "facebook.com" in href or "fb.com" in href:
+            links["facebook"] = full_url
+        elif "instagram.com" in href:
+            links["instagram"] = full_url
+        elif "linkedin.com" in href:
+            links["linkedin"] = full_url
+
+    return links
+
+
+async def scrape_website_to_markdown(url: str) -> tuple[str, dict]:
     """
     Scrape a website and convert its content to markdown.
-
-    Args:
-        url: The URL to scrape
+    Also extracts important links BEFORE truncation.
 
     Returns:
-        Markdown formatted content of the page
+        Tuple of (markdown_content, extracted_links)
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -35,11 +85,6 @@ async def scrape_website_to_markdown(url: str) -> str:
         "DNT": "1",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Cache-Control": "max-age=0",
     }
 
     try:
@@ -47,14 +92,18 @@ async def scrape_website_to_markdown(url: str) -> str:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
     except httpx.HTTPStatusError as e:
-        # Return error message instead of raising (so workflow continues)
-        return f"Error: Could not fetch {url} - HTTP {e.response.status_code}"
+        return f"Error: Could not fetch {url} - HTTP {e.response.status_code}", {}
     except httpx.TimeoutException:
-        return f"Error: Timeout fetching {url}"
+        return f"Error: Timeout fetching {url}", {}
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error: {str(e)}", {}
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    raw_html = response.text
+
+    # Extract links BEFORE any processing
+    extracted_links = extract_important_links(raw_html, url)
+
+    soup = BeautifulSoup(raw_html, "html.parser")
 
     for script in soup(["script", "style", "noscript"]):
         script.decompose()
@@ -75,7 +124,7 @@ async def scrape_website_to_markdown(url: str) -> str:
     if len(markdown_content) > 15000:
         markdown_content = markdown_content[:15000] + "\n\n[Content truncated...]"
 
-    return markdown_content
+    return markdown_content, extracted_links
 
 
 async def analyse_website(url: str) -> WebsiteData:
@@ -89,15 +138,15 @@ async def analyse_website(url: str) -> WebsiteData:
         WebsiteData with summary and social media links
     """
 
-    website_content = await scrape_website_to_markdown(url)
+    website_content, extracted_links = await scrape_website_to_markdown(url)
 
     if website_content.startswith("Error"):
         return WebsiteData(
             summary=f"Could not analyze website: {website_content}",
-            blog_url="",
-            youtube="",
-            twitter="",
-            facebook="",
+            blog_url=extracted_links.get("blog_url", ""),
+            youtube=extracted_links.get("youtube", ""),
+            twitter=extracted_links.get("twitter", ""),
+            facebook=extracted_links.get("facebook", ""),
         )
 
     system_prompt = f"""
@@ -122,4 +171,13 @@ async def analyse_website(url: str) -> WebsiteData:
         user_message=website_content,
         response_format=WebsiteData,
     )
+
+    if not result.blog_url and extracted_links.get("blog_url"):
+        result.blog_url = extracted_links["blog_url"]
+    if not result.youtube and extracted_links.get("youtube"):
+        result.youtube = extracted_links["youtube"]
+    if not result.twitter and extracted_links.get("twitter"):
+        result.twitter = extracted_links["twitter"]
+    if not result.facebook and extracted_links.get("facebook"):
+        result.facebook = extracted_links["facebook"]
     return result
