@@ -284,7 +284,16 @@ async def anayse_recent_news(state: GraphState) -> Dict[str, Any]:
         return updates
 
     try:
-        news = await get_recent_news(company_name, num_results=5)
+        days_back_used = 30
+        news = await get_recent_news(
+            company_name, num_results=5, days_back=days_back_used
+        )
+
+        if (not news) or (isinstance(news, str) and news.startswith("No recent news")):
+            days_back_used = 365
+            news = await get_recent_news(
+                company_name, num_results=5, days_back=days_back_used
+            )
 
         prompt = f"""
         Summarize recent news about {company_name}.

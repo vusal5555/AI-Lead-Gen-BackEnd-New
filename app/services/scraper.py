@@ -2,7 +2,6 @@ import re
 import httpx
 import html2text
 from bs4 import BeautifulSoup
-from typing import Optional
 from pydantic import BaseModel
 
 from app.services.llm import invoke_llm
@@ -44,7 +43,7 @@ async def scrape_website_to_markdown(url: str) -> str:
     }
 
     try:
-        async with httpx.AsyncClient(follow_redirects=False, timeout=30.0) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
     except httpx.HTTPStatusError as e:

@@ -48,63 +48,6 @@ async def start_research(request: ResearchRequest):
 
         supabase.table("leads").update(leads_update).eq("id", request.lead_id).execute()
 
-        reports = final_state.get("reports", [])
-
-        for report in reports:
-            supabase.table("reports").insert(
-                {
-                    "lead_id": request.lead_id,
-                    "user_id": lead.get("user_id", ""),
-                    "report_type": report.get("report_type", ""),
-                    "title": report.get("title", ""),
-                    "content": report.get("content", ""),
-                    "is_markdown": report.get("is_markdown", True),
-                    "metadata": report.get("metadata", {}),
-                }
-            ).execute()
-
-        outreach = final_state.get("outreach_materials", {})
-
-        if outreach.get("email_body"):
-            supabase.table("outreach_materials").insert(
-                {
-                    "lead_id": request.lead_id,
-                    "user_id": lead.get("user_id", ""),
-                    "material_type": "email",
-                    "subject": outreach.get("email_subject", ""),
-                    "content": outreach.get("email_body", ""),
-                }
-            ).execute()
-
-        if outreach.get("interview_script"):
-            supabase.table("outreach_materials").insert(
-                {
-                    "lead_id": request.lead_id,
-                    "user_id": lead.get("user_id", ""),
-                    "material_type": "interview_script",
-                    "subject": "",
-                    "content": outreach.get("interview_script", ""),
-                }
-            ).execute()
-
-        # 7. Save company data
-        company = final_state.get("company_data", {})
-        if company:
-            social_links = company.get("social_media_links", {})
-            supabase.table("company_data").upsert(
-                {
-                    "lead_id": request.lead_id,
-                    "name": company.get("name", ""),
-                    "profile": company.get("profile", ""),
-                    "website": company.get("website", ""),
-                    "blog_url": social_links.get("blog", ""),
-                    "facebook_url": social_links.get("facebook", ""),
-                    "twitter_url": social_links.get("twitter", ""),
-                    "youtube_url": social_links.get("youtube", ""),
-                },
-                on_conflict="lead_id",
-            ).execute()
-
         return {
             "message": "Research completed",
             "lead_id": request.lead_id,

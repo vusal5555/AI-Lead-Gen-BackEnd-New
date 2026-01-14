@@ -42,14 +42,31 @@ async def google_search(query: str, num_results: int = 5) -> List[Dict[str, Any]
             raise RuntimeError(f"Google search failed: {e}")
 
 
-async def get_recent_news(company: str, num_results: int = 5) -> List[Dict[str, Any]]:
+def days_back_to_tbs(days_back: int) -> str:
+    """
+    Convert a days_back value into Serper/Google 'tbs' quick-date-range filters.
+    qdr:d = day, qdr:w = week, qdr:m = month, qdr:y = year
+    """
+
+    if days_back <= 1:
+        return "qdr:d"
+    if days_back <= 7:
+        return "qdr:w"
+    if days_back <= 31:
+        return "qdr:m"
+    return "qdr:y"
+
+
+async def get_recent_news(
+    company: str, num_results: int = 5, days_back: int = 30
+) -> List[Dict[str, Any]]:
     """
     Get recent news about a company using Serper API.
 
     Args:
         company: Company name to search for
         num_results: Number of news results
-
+        days_back: Recency window. Mapped to Serper's qdr filters (day/week/month/year).
     Returns:
         Formatted string of recent news
     """
@@ -65,7 +82,8 @@ async def get_recent_news(company: str, num_results: int = 5) -> List[Dict[str, 
 
     headers = {"X-API-KEY": settings.serper_api_key, "Content-Type": "application/json"}
 
-    params = {"q": company, "num": num_results, "tbs": "qdr:m"}  # Last month
+    tbs = days_back_to_tbs(days_back)
+    params = {"q": company, "num": num_results, "tbs": tbs}  # Last month
 
     async with httpx.AsyncClient() as client:
         try:
